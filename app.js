@@ -195,11 +195,11 @@ function taches(){
  l.sort((a,b)=>(a.st==="fait")-(b.st==="fait")||(a.due||"").localeCompare(b.due||""));
  return `<div class="chips" role="group" aria-label="Filtrer">${F.map(([k,lb])=>`<button class="chip" data-act="filter" data-v="${k}" aria-pressed="${S.filter===k}">${lb}</button>`).join("")}</div>
  <div class="list">${l.length?l.map(taskRow).join(""):`<div class="card empty">${I.check}<b>Aucune tâche ici</b><span class="small muted">Touche « + Nouvelle tâche » pour en créer une.</span></div>`}</div>
- <div class="small muted">Rappels dans le récap mail du soir : J-14, J-7, J-3 et le jour de l'échéance.</div>`;
+ `;
 }
 function taskSheet(id){
  const t=L("taches").find(x=>x.id===id);if(!t)return;
- openSheet(`<h3>${esc(t.t)}</h3>
+ openSheet(`<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><h3>${esc(t.t)}</h3><button class="copy" data-act="editTask" data-v="${esc(t.id)}" style="flex:none">✏️ Modifier</button></div>
  <div class="seg" role="group" aria-label="Statut">${Object.entries(ST).map(([k,l])=>`<button data-act="setSt" data-id="${esc(t.id)}" data-v="${k}" aria-pressed="${t.st===k}">${l}</button>`).join("")}</div>
  <dl class="kv">${t.due?`<dt>Pour le</dt><dd>${dfmt(t.due)}</dd>`:""}<dt>Qui</dt><dd>${(t.who||[]).map(esc).join(", ")}</dd>${t.desc?`<dt>Détails</dt><dd style="font-weight:500">${esc(t.desc)}</dd>`:""}</dl>
  <div class="list"><b class="small">Fichiers</b>${(t.files||[]).length?t.files.map(fileLink).join(""):`<span class="small muted">Aucun fichier.</span>`}
@@ -215,16 +215,18 @@ function attachBtns(target){
  <button type="button" data-act="mkdoc" data-k="sheet" data-t="${esc(target)}"><span class="ft sheet">XLS</span>Créer un Sheet</button>`;
 }
 let draft=null;
-function newTaskSheet(){
+function newTaskSheet(id){
+ const t=id?L("taches").find(x=>x.id===id):null;
  const d=new Date();d.setDate(d.getDate()+14);
- draft={who:[S.user],files:[]};
- openSheet(`<h3>Nouvelle tâche</h3><form id="taskform" class="list" style="gap:14px">
- <label class="f">Titre<input id="tt" required placeholder="Ex. Réserver les barrières"></label>
- <div class="f"><b class="small">Qui s'en occupe ?</b><div class="chips" style="flex-wrap:wrap">${MEMBRES.map(m=>`<button type="button" class="chip" data-act="toggleWho" data-v="${esc(m)}" aria-pressed="${m===S.user}">${esc(m)}</button>`).join("")}</div></div>
- <label class="f">Pour le<input type="date" id="td" required value="${d.toISOString().slice(0,10)}"></label>
- <label class="f">Détails (facultatif)<textarea id="tx"></textarea></label>
- <div class="list"><b class="small">Fichier</b><div id="draftfiles" class="list"></div><div class="attach">${attachBtns("draft")}</div></div>
- <button class="btn lemon" type="submit">Créer la tâche</button></form>`);
+ draft={id:id||null,who:t?[...(t.who||[])]:[S.user],files:t?[...(t.files||[])]:[]};
+ openSheet(`<h3>${t?"Modifier la tâche":"Nouvelle tâche"}</h3><form id="taskform" class="list" style="gap:14px">
+ <label class="f">Titre<input id="tt" required value="${esc(t?t.t:"")}" placeholder="Ex. Réserver les barrières"></label>
+ <div class="f"><b class="small">Qui s'en occupe ?</b><div class="chips" style="flex-wrap:wrap">${MEMBRES.map(m=>`<button type="button" class="chip" data-act="toggleWho" data-v="${esc(m)}" aria-pressed="${draft.who.includes(m)}">${esc(m)}</button>`).join("")}</div></div>
+ <label class="f">Pour le<input type="date" id="td" required value="${esc(t?t.due:d.toISOString().slice(0,10))}"></label>
+ <label class="f">Détails (facultatif)<textarea id="tx">${esc(t?t.desc:"")}</textarea></label>
+ ${t?"":`<div class="list"><b class="small">Fichier</b><div id="draftfiles" class="list"></div><div class="attach">${attachBtns("draft")}</div></div>`}
+ <button class="btn lemon" type="submit">${t?"Enregistrer":"Créer la tâche"}</button>
+ ${t?`<button class="btn ghost" type="button" data-act="task" data-v="${esc(t.id)}">Annuler</button>`:""}</form>`);
 }
 function drawDraftFiles(){const el=$("#draftfiles");if(el)el.innerHTML=draft.files.map(fileLink).join("")}
 
@@ -433,6 +435,7 @@ document.addEventListener("click",async e=>{
   case "filter":S.filter=v;render();break;
   case "task":taskSheet(v);break;
   case "newTask":newTaskSheet();break;
+  case "editTask":newTaskSheet(v);break;
   case "toggleWho":{const on=b.getAttribute("aria-pressed")!=="true";b.setAttribute("aria-pressed",on);draft.who=on?[...draft.who,v]:draft.who.filter(x=>x!==v);break}
   case "setSt":{const t=L("taches").find(x=>x.id===b.dataset.id);t.st=v;pressSingle();save("taches",t,`Tâche « ${t.t} » : ${ST[v]}`);taskSheet(t.id);break}
   case "delTask":{if(!b.dataset.ok){confirmBtn(b);break}const t=L("taches").find(x=>x.id===b.dataset.id);closeLayers();del("taches",t.id,`Tâche supprimée : ${t.t}`);toast("Tâche supprimée");break}
@@ -490,7 +493,9 @@ document.addEventListener("submit",async e=>{
  if(f.id==="codeform")return;
  try{
  if(f.dataset.form==="comment"){const x=$("#cmt").value.trim();if(!x)return;const t=L("taches").find(t=>t.id===f.dataset.id);t.com=[...(t.com||[]),{a:S.user,x,d:new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"short"})}];save("taches",t,`Commentaire sur « ${t.t} » : ${x}`);taskSheet(t.id);return}
- if(f.id==="taskform"){if(!draft.who.length){toast("Choisis au moins une personne.");return}const t={id:uid(),t:$("#tt").value.trim(),who:draft.who,due:$("#td").value,st:"afaire",desc:$("#tx").value.trim(),files:draft.files,com:[]};closeLayers();S.tab="taches";S.view=null;save("taches",t,`Nouvelle tâche : ${t.t} (${t.who.join(", ")})`);toast("Tâche créée");return}
+ if(f.id==="taskform"){if(!draft.who.length){toast("Choisis au moins une personne.");return}
+  if(draft.id){const t=L("taches").find(x=>x.id===draft.id);Object.assign(t,{t:$("#tt").value.trim(),who:draft.who,due:$("#td").value,desc:$("#tx").value.trim()});save("taches",t,`Tâche modifiée : ${t.t}`);taskSheet(t.id);toast("Tâche modifiée");return}
+  const t={id:uid(),t:$("#tt").value.trim(),who:draft.who,due:$("#td").value,st:"afaire",desc:$("#tx").value.trim(),files:draft.files,com:[]};closeLayers();S.tab="taches";S.view=null;save("taches",t,`Nouvelle tâche : ${t.t} (${t.who.join(", ")})`);toast("Tâche créée");return}
  if(f.id==="expform"){const m=parseFloat($("#em").value.replace(/\s/g,"").replace(",","."));if(!(m>0)){toast("Le montant doit être un nombre, par exemple 120,50.");return}
   const btn=f.querySelector('[type="submit"]');btn.disabled=true;btn.textContent="Enregistrement…";
   const old=draft.id?L("depenses").find(x=>x.id===draft.id):{};
